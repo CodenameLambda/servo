@@ -49,7 +49,7 @@ use script_layout_interface::{HTMLCanvasData, LayoutNodeType, SVGSVGData, Truste
 use script_layout_interface::{OpaqueStyleAndLayoutData, StyleData};
 use script_layout_interface::wrapper_traits::{DangerousThreadSafeLayoutNode, GetLayoutData, LayoutNode};
 use script_layout_interface::wrapper_traits::{PseudoElementType, ThreadSafeLayoutElement, ThreadSafeLayoutNode};
-use selectors::attr::{AttrSelectorOperation, NamespaceConstraint};
+use selectors::attr::{AttrSelectorOperation, NamespaceConstraint, CaseSensitivity};
 use selectors::matching::{ElementSelectorFlags, MatchingContext, RelevantLinkStatus, VisitedHandlingMode};
 use servo_atoms::Atom;
 use servo_url::ServoUrl;
@@ -60,6 +60,7 @@ use std::marker::PhantomData;
 use std::mem::transmute;
 use std::sync::atomic::Ordering;
 use style;
+use style::CaseSensitivityExt;
 use style::attr::AttrValue;
 use style::computed_values::display;
 use style::context::{QuirksMode, SharedStyleContext};
@@ -402,6 +403,13 @@ impl<'le> TElement for ServoLayoutElement<'le> {
     #[inline]
     fn attr_equals(&self, namespace: &Namespace, attr: &LocalName, val: &Atom) -> bool {
         self.get_attr(namespace, attr).map_or(false, |x| x == val)
+    }
+
+    #[inline]
+    fn get_id(&self) -> Option<Atom> {
+        unsafe {
+            (*self.element.id_attribute()).clone()
+        }
     }
 
     #[inline(always)]
@@ -769,16 +777,24 @@ impl<'le> ::selectors::Element for ServoLayoutElement<'le> {
     }
 
     #[inline]
-    fn get_id(&self) -> Option<Atom> {
+    fn has_id(&self, id: &Atom, case_sensitivity: CaseSensitivity) -> bool {
         unsafe {
-            (*self.element.id_attribute()).clone()
+            (*self.element.id_attribute())
+                .as_ref()
+                .map_or(false, |atom| case_sensitivity.eq_atom(atom, id))
         }
     }
 
     #[inline]
-    fn has_class(&self, name: &Atom) -> bool {
+    fn has_class(&self, name: &Atom, case_sensitivity: CaseSensitivity) -> bool {
         unsafe {
-            self.element.has_class_for_layout(name)
+            self.element.has_class_for_layout(name, case_sensitivity)
+        }
+    }
+
+    fn in_quirks_mode_document(&self) -> bool {
+        unsafe {
+            self.element.in_quirks_mode_document_for_layout()
         }
     }
 
@@ -1184,6 +1200,11 @@ impl<'le> ::selectors::Element for ServoThreadSafeLayoutElement<'le> {
         true
     }
 
+    fn in_quirks_mode_document(&self) -> bool {
+        debug!("ServoThreadSafeLayoutElement::in_quirks_mode_document called");
+        false
+    }
+
     #[inline]
     fn get_local_name(&self) -> &LocalName {
         self.element.get_local_name()
@@ -1239,12 +1260,12 @@ impl<'le> ::selectors::Element for ServoThreadSafeLayoutElement<'le> {
         false
     }
 
-    fn get_id(&self) -> Option<Atom> {
-        debug!("ServoThreadSafeLayoutElement::get_id called");
-        None
+    fn has_id(&self, _id: &Atom, _case_sensitivity: CaseSensitivity) -> bool {
+        debug!("ServoThreadSafeLayoutElement::has_id called");
+        false
     }
 
-    fn has_class(&self, _name: &Atom) -> bool {
+    fn has_class(&self, _name: &Atom, _case_sensitivity: CaseSensitivity) -> bool {
         debug!("ServoThreadSafeLayoutElement::has_class called");
         false
     }
